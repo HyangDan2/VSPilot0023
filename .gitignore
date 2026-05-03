@@ -1,0 +1,12 @@
+config.yaml
+.env
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+logs/*.log
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+.kiwoom_token_cache.json
