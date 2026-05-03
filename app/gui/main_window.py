@@ -250,7 +250,12 @@ class MainWindow(QMainWindow):
         self.thread.start()
 
     def on_stop_clicked(self):
-        self.stop_thread_blocking(timeout_ms=5000)
+        if self.worker:
+            self.append_log("Stop requested...")
+            self.worker.stop()
+
+        self.btn_stop.setEnabled(False)
+        self.lbl_running.setText("Stopping...")
 
     def stop_thread_blocking(self, timeout_ms=5000):
         if self._stopping:
@@ -336,7 +341,15 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self.thread and self.thread.isRunning():
-            self.stop_thread_blocking(timeout_ms=5000)
+            if self.worker:
+                self.worker.stop()
+
+            self.thread.quit()
+
+            if not self.thread.wait(5000):
+                self.thread.terminate()
+                self.thread.wait(2000)
+
         event.accept()
 
 def fmt(v):
