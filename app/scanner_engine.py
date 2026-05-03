@@ -8,14 +8,6 @@ from app.kiwoom.exceptions import KiwoomRateLimitError, KiwoomError
 from app.analysis.static_analyzer import analyze
 
 class ScannerEngine:
-    """
-    GUI/CLI 공용 스캐너 엔진.
-    callback dict:
-      - on_status(dict)
-      - on_log(str)
-      - on_alert(dict)
-      - should_stop() -> bool
-    """
     def __init__(self, config, callbacks=None):
         self.config = config
         self.callbacks = callbacks or {}
@@ -80,11 +72,9 @@ class ScannerEngine:
         self.running = True
         self.initialize()
         self.log("Scanner loop started")
-
         while not self.should_stop():
             self.tick()
             self.interruptible_sleep(self.rate.interval())
-
         self.running = False
         self.log("Scanner loop stopped")
 
@@ -144,6 +134,15 @@ class ScannerEngine:
                 ma120=result.ma120,
                 per=result.per,
                 pbr=result.pbr,
+                roe=result.roe,
+                eps=result.eps,
+                bps=result.bps,
+                sales=result.sales,
+                operating_profit=result.operating_profit,
+                net_income=result.net_income,
+                market_cap=result.market_cap,
+                foreign_exhaustion_rate=result.foreign_exhaustion_rate,
+                volume_ratio=result.volume_ratio,
                 condition_summary=", ".join([k for k, v in result.conditions.items() if v]) or "-",
             )
 
@@ -152,14 +151,12 @@ class ScannerEngine:
             self.log(f"HTTP 429 detected. Rate down: {self.rate.rate:.3f} symbols/sec")
             self.emit_status(rate=self.rate.rate, error="HTTP 429")
             return
-
         except KiwoomError as e:
             self.log(f"Kiwoom error for {symbol.code}: {e}")
             self.emit_status(error=str(e))
             self.index = (self.index + 1) % len(self.symbols)
             self.storage.set_state("current_symbol_index", self.index)
             return
-
         except Exception as e:
             self.log(f"Unexpected error for {symbol.code}: {e}\n{traceback.format_exc()}")
             self.emit_status(error=str(e))
@@ -169,7 +166,6 @@ class ScannerEngine:
 
         self.index = (self.index + 1) % len(self.symbols)
         self.storage.set_state("current_symbol_index", self.index)
-
         self.rate.maybe_recover()
         self.flush_telegram_if_needed()
 
@@ -185,30 +181,19 @@ class ScannerEngine:
             if not self.storage.should_alert(symbol.code, condition_name, cooldown):
                 continue
 
-            msg = (
-                f"MA5={fmt(result.ma5)}, MA20={fmt(result.ma20)}, "
-                f"MA60={fmt(result.ma60)}, MA120={fmt(result.ma120)}, "
-                f"PER={fmt(result.per)}, PBR={fmt(result.pbr)}"
-            )
+            msg = compact_metrics(result)
             self.storage.enqueue_alert(symbol.code, condition_name, msg)
-            self.emit_alert(
-                code=symbol.code,
-                name=symbol.name,
-                condition=condition_name,
-                message=msg,
-            )
+            self.emit_alert(code=symbol.code, name=symbol.name, condition=condition_name, message=msg)
 
     def flush_telegram_if_needed(self):
         interval = float(self.config["scanner"].get("telegram_interval_seconds", 60))
         if time.time() - self.last_telegram < interval:
             return
-
         alerts = self.storage.get_pending_alerts()
         if alerts:
             sent_ids = self.telegram.send_batch(alerts)
             self.storage.mark_sent(sent_ids)
             self.log(f"Telegram batch sent: {len(sent_ids)} alerts")
-
         self.last_telegram = time.time()
 
     def get_sleep_interval(self):
@@ -221,3 +206,9 @@ def fmt(v):
         return f"{float(v):.2f}"
     except Exception:
         return str(v)
+
+def compact_metrics(result):
+    return (
+        f"PER={fmt(result.per)}, PBR={fmt(result.pbr)}, ROE={fmt(result.roe)}, "
+        f"OP={fmt(result.operating_profit)}, NI={fmt(result.net_income)}, VOLx={fmt(result.volume_ratio)}"
+    )

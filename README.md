@@ -149,3 +149,30 @@ python scripts/check_daily.py
 python scripts/check_conditions.py
 python gui_main.py
 ```
+
+## v5 Patch - Fundamental/Volume Indicator Expansion
+
+- `ka10001` 기본정보/재무 스냅샷 parser 확장
+  - PER, PBR, ROE, EPS, BPS
+  - 매출액, 영업이익, 순이익
+  - 시가총액, 외인소진률
+- `ka10081` 일봉 기반 거래량 지표 추가
+  - 오늘 거래량
+  - 거래량 MA20
+  - 거래량배율 `volume_ratio`
+- DB 자동 마이그레이션
+  - 기존 `scanner.db`가 있어도 필요한 컬럼을 ALTER TABLE로 추가
+- GUI 조건식 메뉴 확장
+  - `PER/PBR/ROE/EPS/BPS/매출액/영업이익/순이익/시가총액/외인소진률/거래량배율`
+  - 조건 입력 예: `<5`, `>10`, `>=0`, `<=100000`
+- Telegram 메시지 축약
+  - 종목명, 종목코드, 조건명만 전송
+  - 긴 메시지는 자동 분할
+
+테스트:
+
+```bash
+python scripts/check_fundamental.py
+python scripts/check_conditions.py
+python gui_main.py
+```

@@ -72,6 +72,7 @@ class MainWindow(QMainWindow):
         self.lbl_last = QLabel("-")
         self.lbl_ma = QLabel("-")
         self.lbl_value = QLabel("-")
+        self.lbl_finance = QLabel("-")
         self.lbl_conditions = QLabel("-")
         self.lbl_active_conditions = QLabel("-")
         self.chk_auto_scroll = QCheckBox("Auto-scroll log")
@@ -187,6 +188,9 @@ class MainWindow(QMainWindow):
                 "metrics": [
                     {"metric": "per", "op": "<", "value": 5.0},
                     {"metric": "pbr", "op": "<", "value": 0.5},
+                    {"metric": "roe", "op": ">", "value": 10.0},
+                    {"metric": "operating_profit", "op": ">", "value": 0.0},
+                    {"metric": "net_income", "op": ">", "value": 0.0},
                 ],
             },
             {
@@ -196,9 +200,20 @@ class MainWindow(QMainWindow):
                 "ma_above": [[5, 120]],
                 "metrics": [],
             },
+            {
+                "name": "volume_spike_value",
+                "enabled": True,
+                "ma_order": [5, 20],
+                "ma_above": [],
+                "metrics": [
+                    {"metric": "volume_ratio", "op": ">", "value": 2.0},
+                    {"metric": "per", "op": "<", "value": 10.0},
+                    {"metric": "pbr", "op": "<", "value": 1.0},
+                ],
+            },
         ]
         self.config.setdefault("alert", {})
-        self.config["alert"]["include_conditions"] = ["bullish_value", "ma5_above_ma120"]
+        self.config["alert"]["include_conditions"] = ["bullish_value", "ma5_above_ma120", "volume_spike_value"]
         self.update_active_conditions_label()
         self.save_current_config()
         self.append_log("Default alert conditions restored.")
@@ -282,8 +297,16 @@ class MainWindow(QMainWindow):
                 f"MA5={fmt(s.get('ma5'))}, MA20={fmt(s.get('ma20'))}, "
                 f"MA60={fmt(s.get('ma60'))}, MA120={fmt(s.get('ma120'))}"
             )
-        if "per" in s or "pbr" in s:
-            self.lbl_value.setText(f"PER={fmt(s.get('per'))}, PBR={fmt(s.get('pbr'))}")
+        if "per" in s or "pbr" in s or "roe" in s or "volume_ratio" in s:
+            self.lbl_value.setText(
+                f"PER={fmt(s.get('per'))}, PBR={fmt(s.get('pbr'))}, "
+                f"ROE={fmt(s.get('roe'))}, VOLx={fmt(s.get('volume_ratio'))}"
+            )
+        if "operating_profit" in s or "net_income" in s or "market_cap" in s or "foreign_exhaustion_rate" in s:
+            self.lbl_finance.setText(
+                f"OP={fmt(s.get('operating_profit'))}, NI={fmt(s.get('net_income'))}, "
+                f"MCAP={fmt(s.get('market_cap'))}, FGN={fmt(s.get('foreign_exhaustion_rate'))}"
+            )
         if "condition_summary" in s:
             self.lbl_conditions.setText(str(s["condition_summary"]))
         if "error" in s:
