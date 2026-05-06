@@ -1,8 +1,8 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget,
     QTableWidgetItem, QCheckBox, QHeaderView, QLabel, QMessageBox,
+    QComboBox
 )
-from PySide6.QtCore import Qt
 
 METRIC_COLUMNS = [
     ("PER", "per"),
@@ -15,24 +15,30 @@ METRIC_COLUMNS = [
     ("순이익", "net_income"),
     ("시가총액", "market_cap"),
     ("외인소진률", "foreign_exhaustion_rate"),
+    ("거래량", "volume_today"),
+    ("거래량MA20", "volume_ma20"),
     ("거래량배율", "volume_ratio"),
 ]
-COLUMNS = ["Enabled", "Name", "MA Order", "MA Above"] + [f"{label} 조건" for label, _ in METRIC_COLUMNS]
+
+COLUMNS = ["Enabled", "Operand", "Name", "MA Order", "MA Above"] + [f"{label} 조건" for label, _ in METRIC_COLUMNS]
 
 class ConditionDialog(QDialog):
     def __init__(self, config: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Condition Settings")
-        self.resize(1320, 520)
+        self.resize(1500, 560)
         self.config = config
         self._build_ui()
         self.load_from_config()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
+
         help_label = QLabel(
-            "조건식 편집: MA Order 예) 5>20>60, MA Above 예) 5>120. "
-            "지표 조건은 <5, >10, >=0, <=100000 형식. 빈칸은 제외."
+            "Operand는 한 조건행 내부 결합 방식입니다. "
+            "AND=모든 입력 조건 만족, OR=하나 이상 만족. "
+            "MA Order 예) 5>20>60, MA Above 예) 5>120. "
+            "지표 조건 예) <5, >10, >=0. 복수 조건은 >2,<10 처럼 콤마로 입력."
         )
         help_label.setWordWrap(True)
         layout.addWidget(help_label)
@@ -49,6 +55,7 @@ class ConditionDialog(QDialog):
         self.btn_remove = QPushButton("Remove Selected")
         self.btn_ok = QPushButton("Save")
         self.btn_cancel = QPushButton("Cancel")
+
         btns.addWidget(self.btn_add)
         btns.addWidget(self.btn_preset)
         btns.addWidget(self.btn_remove)
@@ -63,31 +70,55 @@ class ConditionDialog(QDialog):
         self.btn_ok.clicked.connect(self.on_save)
         self.btn_cancel.clicked.connect(self.reject)
 
-    def add_condition_row(self, name="", enabled=True, ma_order="", ma_above="", metric_values=None):
+    def add_condition_row(self, name="", enabled=True, operand="AND", ma_order="", ma_above="", metric_values=None):
         metric_values = metric_values or {}
         row = self.table.rowCount()
         self.table.insertRow(row)
+
         chk = QCheckBox()
         chk.setChecked(bool(enabled))
         chk.setStyleSheet("margin-left: 24px;")
         self.table.setCellWidget(row, 0, chk)
 
-        for col, value in enumerate([name, ma_order, ma_above], start=1):
+        combo = QComboBox()
+        combo.addItems(["AND", "OR"])
+        combo.setCurrentText((operand or "AND").upper())
+        self.table.setCellWidget(row, 1, combo)
+
+        for col, value in enumerate([name, ma_order, ma_above], start=2):
             self.table.setItem(row, col, QTableWidgetItem(str(value or "")))
 
-        start = 4
+        start = 5
         for i, (_, metric) in enumerate(METRIC_COLUMNS):
-            self.table.setItem(row, start + i, QTableWidgetItem(str(metric_values.get(metric, ""))))
+            value = metric_values.get(metric, "")
+            if isinstance(value, list):
+                value = ",".join(value)
+            self.table.setItem(row, start + i, QTableWidgetItem(str(value)))
 
     def add_empty_row(self):
-        self.add_condition_row(name="custom_condition", enabled=True)
+        self.add_condition_row(name="custom_condition", enabled=True, operand="AND")
 
     def load_presets(self):
         self.table.setRowCount(0)
-        self.add_condition_row("bullish_value", True, "5>20>60", "", {"per": "<5.0", "pbr": "<0.5", "roe": ">10", "operating_profit": ">0", "net_income": ">0"})
-        self.add_condition_row("ma5_above_ma120", True, "", "5>120", {})
-        self.add_condition_row("volume_spike_value", True, "5>20", "", {"volume_ratio": ">2", "per": "<10", "pbr": "<1"})
-        self.add_condition_row("foreign_strong_profit", True, "", "5>120", {"foreign_exhaustion_rate": ">20", "operating_profit": ">0"})
+        self.add_condition_row("bullish_value", True, "AND", "5>20>60", "", {
+            "per": "<5.0",
+            "pbr": "<0.5",
+            "roe": ">10",
+            "operating_profit": ">0",
+            "net_income": ">0",
+        })
+        self.add_condition_row("ma5_above_ma120", True, "AND", "", "5>120", {})
+        self.add_condition_row("volume_spike_value", True, "AND", "5>20", "", {
+            "volume_ratio": ">2,<10",
+            "volume_today": ">1000000",
+            "per": "<10",
+            "pbr": "<1",
+        })
+        self.add_condition_row("foreign_or_value", True, "OR", "", "", {
+            "foreign_exhaustion_rate": ">20",
+            "roe": ">10",
+            "pbr": "<0.5",
+        })
 
     def remove_selected(self):
         rows = sorted({idx.row() for idx in self.table.selectedIndexes()}, reverse=True)
@@ -100,15 +131,32 @@ class ConditionDialog(QDialog):
         if not custom:
             self.load_presets()
             return
+
         for item in custom:
             ma_order = ">".join(str(x) for x in item.get("ma_order", [])) if item.get("ma_order") else ""
-            ma_above = ",".join(f"{p[0]}>{p[1]}" for p in item.get("ma_above", []) if isinstance(p, (list, tuple)) and len(p) == 2)
+            ma_above = ",".join(
+                f"{p[0]}>{p[1]}" for p in item.get("ma_above", [])
+                if isinstance(p, (list, tuple)) and len(p) == 2
+            )
             metric_values = {}
             for rule in item.get("metrics", []):
                 metric = rule.get("metric")
                 if metric:
-                    metric_values[metric] = f"{rule.get('op', '<')}{rule.get('value', '')}"
-            self.add_condition_row(item.get("name", ""), item.get("enabled", True), ma_order, ma_above, metric_values)
+                    value = f"{rule.get('op', '<')}{rule.get('value', '')}"
+                    old = metric_values.get(metric)
+                    if old:
+                        metric_values[metric] = old + "," + value
+                    else:
+                        metric_values[metric] = value
+
+            self.add_condition_row(
+                item.get("name", ""),
+                item.get("enabled", True),
+                item.get("operand", "AND"),
+                ma_order,
+                ma_above,
+                metric_values,
+            )
 
     def parse_ma_order(self, text):
         text = (text or "").strip()
@@ -137,11 +185,19 @@ class ConditionDialog(QDialog):
         except Exception:
             raise ValueError(f"Invalid MA Above: {text}. Example: 5>120")
 
-    def parse_metric_rule(self, metric, text):
+    def parse_metric_rules(self, metric, text):
         text = (text or "").strip()
         if not text:
-            return None
-        for op in [">=", "<=", ">", "<", "=="]:
+            return []
+        rules = []
+        for chunk in text.split(","):
+            chunk = chunk.strip()
+            if chunk:
+                rules.append(self.parse_single_metric_rule(metric, chunk))
+        return rules
+
+    def parse_single_metric_rule(self, metric, text):
+        for op in [">=", "<=", "!=", "==", ">", "<"]:
             if text.startswith(op):
                 value_text = text[len(op):].strip()
                 break
@@ -151,7 +207,7 @@ class ConditionDialog(QDialog):
         try:
             value = float(value_text.replace(",", ""))
         except Exception:
-            raise ValueError(f"Invalid metric rule for {metric}: {text}. Example: <5 or >10")
+            raise ValueError(f"Invalid metric rule for {metric}: {text}. Example: <5 or >2,<10")
         return {"metric": metric, "op": op, "value": value}
 
     def collect_conditions(self):
@@ -160,26 +216,28 @@ class ConditionDialog(QDialog):
             enabled_widget = self.table.cellWidget(row, 0)
             enabled = enabled_widget.isChecked() if enabled_widget else True
 
+            operand_widget = self.table.cellWidget(row, 1)
+            operand = operand_widget.currentText() if operand_widget else "AND"
+
             def cell(col):
                 item = self.table.item(row, col)
                 return item.text().strip() if item else ""
 
-            name = cell(1)
+            name = cell(2)
             if not name:
                 raise ValueError(f"Row {row + 1}: condition name is empty.")
 
             metrics = []
-            start = 4
+            start = 5
             for i, (_, metric) in enumerate(METRIC_COLUMNS):
-                rule = self.parse_metric_rule(metric, cell(start + i))
-                if rule:
-                    metrics.append(rule)
+                metrics.extend(self.parse_metric_rules(metric, cell(start + i)))
 
             result.append({
                 "name": name,
                 "enabled": enabled,
-                "ma_order": self.parse_ma_order(cell(2)),
-                "ma_above": self.parse_ma_above(cell(3)),
+                "operand": operand,
+                "ma_order": self.parse_ma_order(cell(3)),
+                "ma_above": self.parse_ma_above(cell(4)),
                 "metrics": metrics,
             })
         return result

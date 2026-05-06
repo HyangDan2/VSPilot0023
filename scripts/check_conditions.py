@@ -15,6 +15,8 @@ if __name__ == "__main__":
         "net_income": 28000000,
         "market_cap": 450000000,
         "foreign_exhaustion_rate": 52.3,
-        "volume_ratio": 2.5,
+        "volume_today": 3000000,
+        "volume_ma20": 1000000,
+        "volume_ratio": 3.0,
     }
     print(evaluate_conditions(metrics, cfg["analysis"]))

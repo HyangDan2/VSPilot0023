@@ -72,6 +72,7 @@ analysis:
   custom_conditions:
   - name: bullish_value
     enabled: true
+    operand: AND
     ma_order:
     - 5
     - 20
@@ -95,6 +96,7 @@ analysis:
       value: 0.0
   - name: ma5_above_ma120
     enabled: true
+    operand: AND
     ma_order: []
     ma_above:
     - - 5
@@ -102,6 +104,7 @@ analysis:
     metrics: []
   - name: volume_spike_value
     enabled: true
+    operand: AND
     ma_order:
     - 5
     - 20
@@ -110,18 +113,40 @@ analysis:
     - metric: volume_ratio
       op: '>'
       value: 2.0
+    - metric: volume_ratio
+      op: <
+      value: 10.0
+    - metric: volume_today
+      op: '>'
+      value: 1000000.0
     - metric: per
       op: <
       value: 10.0
     - metric: pbr
       op: <
       value: 1.0
+  - name: foreign_or_value
+    enabled: true
+    operand: OR
+    ma_order: []
+    ma_above: []
+    metrics:
+    - metric: foreign_exhaustion_rate
+      op: '>'
+      value: 20.0
+    - metric: roe
+      op: '>'
+      value: 10.0
+    - metric: pbr
+      op: <
+      value: 0.5
 alert:
   cooldown_minutes: 30
   include_conditions:
   - bullish_value
   - ma5_above_ma120
   - volume_spike_value
+  - foreign_or_value
 storage:
   sqlite_path: data/scanner.db
   save_raw_response: false

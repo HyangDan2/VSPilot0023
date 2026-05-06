@@ -176,3 +176,27 @@ python scripts/check_fundamental.py
 python scripts/check_conditions.py
 python gui_main.py
 ```
+
+## v6 Patch - Volume Conditions and AND/OR Operand
+
+- 조건식 GUI에 추가:
+  - `거래량` = `volume_today`
+  - `거래량MA20` = `volume_ma20`
+  - `거래량배율` = `volume_ratio`
+- 조건 행마다 `Operand` 선택 추가:
+  - `AND`: 해당 조건행 안의 모든 조건을 만족해야 함
+  - `OR`: 해당 조건행 안의 조건 중 하나 이상 만족하면 됨
+- 한 지표 칸에 복수 조건 입력 지원:
+  - 예: `거래량배율 조건`에 `>2,<10`
+  - 저장 시 같은 metric에 rule 2개 생성
+- 조건 입력 예:
+  - `거래량`: `>1000000`
+  - `거래량MA20`: `>500000`
+  - `거래량배율`: `>2,<10`
+
+테스트:
+
+```bash
+python scripts/check_conditions.py
+python gui_main.py
+```

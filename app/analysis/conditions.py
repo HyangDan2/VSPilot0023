@@ -30,6 +30,8 @@ def compare_values(left, op: str, right) -> bool:
         return safe_gte(left, right)
     if op == "==":
         return left is not None and right is not None and float(left) == float(right)
+    if op == "!=":
+        return left is not None and right is not None and float(left) != float(right)
     return False
 
 def metric_value(metric_name: str, metrics: dict):
@@ -44,74 +46,74 @@ def compare_metric(metric_name: str, op: str, threshold, metrics: dict) -> bool:
         return True
     return compare_values(value, op, threshold)
 
+def combine_results(results, operand: str) -> bool:
+    operand = (operand or "AND").upper().strip()
+    if not results:
+        return True
+    if operand == "OR":
+        return any(results)
+    return all(results)
+
 def evaluate_legacy_conditions(metrics: dict, cfg: dict) -> dict:
     ma = metrics.get("ma", {})
     per = metrics.get("per")
     pbr = metrics.get("pbr")
     conditions_cfg = cfg.get("conditions", {})
-
-    ma5 = ma.get("ma5")
-    ma20 = ma.get("ma20")
-    ma60 = ma.get("ma60")
-    ma120 = ma.get("ma120")
-
-    bullish_value_enabled = conditions_cfg.get("bullish_value", {}).get("enabled", True)
-    ma5_above_ma120_enabled = conditions_cfg.get("ma5_above_ma120", {}).get("enabled", True)
+    ma5, ma20, ma60, ma120 = ma.get("ma5"), ma.get("ma20"), ma.get("ma60"), ma.get("ma120")
 
     bullish_value = False
-    if bullish_value_enabled:
-        per_lt = conditions_cfg.get("bullish_value", {}).get("per_lt", 5.0)
-        pbr_lt = conditions_cfg.get("bullish_value", {}).get("pbr_lt", 0.5)
-        bullish_value = safe_gt(ma5, ma20) and safe_gt(ma20, ma60) and safe_lt(per, per_lt) and safe_lt(pbr, pbr_lt)
+    if conditions_cfg.get("bullish_value", {}).get("enabled", True):
+        bullish_value = (
+            safe_gt(ma5, ma20)
+            and safe_gt(ma20, ma60)
+            and safe_lt(per, conditions_cfg.get("bullish_value", {}).get("per_lt", 5.0))
+            and safe_lt(pbr, conditions_cfg.get("bullish_value", {}).get("pbr_lt", 0.5))
+        )
 
     ma5_above_ma120 = False
-    if ma5_above_ma120_enabled:
+    if conditions_cfg.get("ma5_above_ma120", {}).get("enabled", True):
         ma5_above_ma120 = safe_gt(ma5, ma120)
 
     return {"bullish_value": bullish_value, "ma5_above_ma120": ma5_above_ma120}
 
 def evaluate_custom_conditions(metrics: dict, cfg: dict) -> dict:
     results = {}
-    custom_conditions = cfg.get("custom_conditions", [])
     ma = metrics.get("ma", {})
 
-    for item in custom_conditions:
+    for item in cfg.get("custom_conditions", []):
         name = str(item.get("name", "")).strip()
         if not name:
             continue
 
-        enabled = bool(item.get("enabled", True))
-        if not enabled:
+        if not bool(item.get("enabled", True)):
             results[name] = False
             continue
 
-        ok = True
+        operand = str(item.get("operand", "AND")).upper().strip()
+        rule_results = []
 
         ma_order = item.get("ma_order", [])
         if ma_order:
-            ok = ok and eval_ma_order(ma, ma_order)
+            rule_results.append(eval_ma_order(ma, ma_order))
 
-        ma_above = item.get("ma_above", [])
-        for pair in ma_above:
-            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
-                ok = False
-                continue
-            ok = ok and safe_gt(get_ma(ma, int(pair[0])), get_ma(ma, int(pair[1])))
+        for pair in item.get("ma_above", []):
+            if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                rule_results.append(safe_gt(get_ma(ma, int(pair[0])), get_ma(ma, int(pair[1]))))
+            else:
+                rule_results.append(False)
 
         for rule in item.get("metrics", []):
             if not isinstance(rule, dict):
-                ok = False
+                rule_results.append(False)
                 continue
-            metric = rule.get("metric")
-            op = rule.get("op", "<")
             threshold = rule.get("value")
             try:
                 threshold = float(threshold) if threshold is not None and threshold != "" else None
             except Exception:
                 threshold = None
-            ok = ok and compare_metric(metric, op, threshold, metrics)
+            rule_results.append(compare_metric(rule.get("metric"), rule.get("op", "<"), threshold, metrics))
 
-        results[name] = bool(ok)
+        results[name] = combine_results(rule_results, operand)
 
     return results
 
@@ -120,8 +122,7 @@ def evaluate_conditions(metrics_or_ma: dict, *args):
         metrics = metrics_or_ma
         cfg = args[0]
     elif len(args) == 3:
-        ma = metrics_or_ma
-        per, pbr, cfg = args
+        ma, per, pbr, cfg = metrics_or_ma, args[0], args[1], args[2]
         metrics = {"ma": ma, "per": per, "pbr": pbr}
     else:
         raise TypeError("evaluate_conditions expects (metrics, cfg) or (ma, per, pbr, cfg)")
